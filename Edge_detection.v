@@ -57,7 +57,7 @@ module Edge_detection(
         end
     end
 
-    // 输出按键状态
+    // 输出按键状态 
     assign sign_pos_A = (~trig_A[2]) & trig_A[1];
     assign sign_pos_S = (~trig_S[2]) & trig_S[1];
     assign sign_neg_S = trig_S[2] & (~trig_S[1]);

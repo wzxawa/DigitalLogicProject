@@ -49,7 +49,7 @@ module control_module(
             nowtime<=0;
             worktime<=0;
             switchtime<=24'b000000000000000000000101;//to complete
-            remindtime<=24'b000100000000000000000000;
+            remindtime<=24'b000100000000000000000000;   
             buttom_effect<=3'b000;
             cnt_A=re_cnt;
             cnt_S=re_cnt;
