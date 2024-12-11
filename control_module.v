@@ -103,77 +103,7 @@ module control_module(
             else begin
                 cnt_clk<=cnt_clk+1;
             end
-
-            //state machine
-            case(state)
-                SHUTDOWN:begin
-                    nowtime<=0;
-                    worktime<=0;
-                    switchtime<=24'b000000000000000000000101;//to complete
-                    remindtime<=24'b000100000000000000000000;
-                    storm_once<=1'b0;
-                    suspend<=1'b0;
-                    sign<={nowtime,NOWTIME};
-                end
-                MENU:begin
-                    suspend<=1'b0;
-                    //nxt_state<=;
-                end
-                ONE:begin
-                    suspend<=1'b1;
-
-                end
-                TWO:begin
-                    suspend<=1'b1;
-                end
-                THREE:begin
-                    suspend<=1'b1;
-                    sign<={nowtime,countdown60};
-                end
-                CLEAN:begin
-                    suspend<=1'b0;
-                    sign<={20'b0,countdown_clean};
-                end
-                SEARCH_WORKTIME:begin
-                    suspend<=1'b0;
-                    sign<={worktime,WORKTIME};
-                end
-                SEARCH_SWITCH_TIME:begin
-                    suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                end
-                SEARCH_REMINDTIME:begin
-                    suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                end
-                SET_SWI_HOUR:begin
-                    suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                end
-                SET_SWI_MIN:begin
-                    suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                end
-                SET_SWI_SEC:begin
-                    suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                end
-                SET_REMIND_HOUR:begin
-                    suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                end
-                SET_REMIND_MIN:begin
-                    suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                end
-                SET_REMIND_SEC:begin
-                    suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                end
-                default:begin
-                    suspend<=1'b0;
-                end
-            endcase
+            
         end
     end
 
@@ -258,7 +188,7 @@ module control_module(
             else countdown_clean[3:0]=countdown_clean[3:0]-4'b0001;
         end
     end
-
+/*
     always @(posedge sign_pos_S) begin
         buttom_effect[2]<=1'b1;
         case(state)
@@ -291,17 +221,17 @@ module control_module(
             end
             default:; //do nothing
         endcase
-    end
+    end*/
     always @(negedge sign_pos_S)begin
         buttom_effect[2]<=1'b0;
     end
-
+/*
     always @(posedge sign_pos_W) begin
         case(state)
             STANDBY:begin
                 nxt_state <= MENU;
             end
-            MENU:begin
+            MENU:begin//wrong
                 nxt_state <= STANDBY;
             end
             ONE:begin
@@ -310,10 +240,15 @@ module control_module(
             TWO:begin
                 nxt_state <= STANDBY;
             end
+
+//?????????
             THREE:begin //exit
                 nxt_state <= EXIT_STROM;
                 //to complete
             end
+//????????
+
+
             SEARCH:begin
                 nxt_state <= STANDBY;
             end
@@ -328,8 +263,8 @@ module control_module(
             end
         endcase
     end
-
-    always @(posedge sign_pos_A) begin
+*/
+    /*always @(posedge sign_pos_A) begin
         case(state)
             SHUTDOWN:begin
                 buttom_effect[1]<=1'b1;
@@ -413,7 +348,8 @@ module control_module(
             default:; //do nothing
         endcase
     end
-
+*/
+/*
     always @(posedge sign_pos_X) begin
         case(state)
             STANDBY:begin
@@ -432,7 +368,8 @@ module control_module(
             default:; //do nothing
         endcase
     end
-
+*/
+/*
     always @(posedge sign_pos_D) begin
         case(state)
             SHUTDOWN:begin
@@ -458,4 +395,214 @@ module control_module(
             default:; //do nothing
         endcase
     end
+*/
+
+    //将所有修改state的模块综合起来
+    //state machine
+    always @(posedge clk) begin
+        case(state)
+                SHUTDOWN:begin
+                    nowtime<=0;
+                    worktime<=0;
+                    switchtime<=24'b000000000000000000000101;//to complete
+                    remindtime<=24'b000100000000000000000000;
+                    storm_once<=1'b0;//是否飓风模式过
+                    suspend<=1'b0;//是否在工作
+                    sign<={nowtime,NOWTIME};//显示当前时间和状态
+                    if(sign_pos_A)begin
+                        buttom_effect[1]<=1'b1;//按键关联
+                        cnt_A<=re_cnt;
+                    end
+                    else if(buttom_effect[1]==1'b1 && sign_pos_D)begin
+                        buttom_effect[1]<=1'b0;
+                        nxt_state <= STANDBY;
+                    end
+                end
+                STANDBY:begin
+                    if(buttom_effect[0]==1'b1 && sign_pos_A)begin
+                        buttom_effect[0]<=1'b0;
+                        nxt_state <= SHUTDOWN;
+                    end else if(sign_pos_D) begin
+                            buttom_effect[0]<=1'b1;
+                            cnt_D<=re_cnt;
+                    end else if(sign_pos_W) begin
+                        nxt_state <= MENU;
+                    end else if(sign_pos_X) begin
+                        nxt_state <= SEARCH;
+                    end
+                end
+                MENU:begin
+                    suspend<=1'b0;
+                    if(sign_pos_A)begin
+                        nxt_state <= ONE;
+                    end else if(sign_pos_S)begin
+                        nxt_state <= TWO;
+                    end else if(sign_pos_D && storm_once==1'b0)begin
+                            storm_once<=1'b1;
+                            nxt_state <= THREE;
+                            countdown_storm<=countdown60;
+                    end else if(sign_pos_X)begin
+                        nxt_state <= CLEAN;
+                        countdown_clean<=countdown180;
+                    end
+                    //nxt_state<=;
+                end
+                ONE:begin
+                    suspend<=1'b1;
+                    if(sign_pos_S)begin
+                        nxt_state <= TWO;
+                    end else if(sign_pos_W)begin
+                        nxt_state <= STANDBY;
+                    end
+                end
+                TWO:begin
+                    suspend<=1'b1;
+                    if(sign_pos_A)begin
+                        nxt_state <= TWO;
+                    end else if(sign_pos_W)begin
+                        nxt_state <= STANDBY;
+                    end
+                end
+                THREE:begin
+                    suspend<=1'b1;
+                    sign<={nowtime,countdown60};
+                end
+                CLEAN:begin
+                    suspend<=1'b0;
+                    sign<={20'b0,countdown_clean};
+                end
+                SEARCH:begin
+                    if(sign_pos_A)begin
+                        nxt_state <= SEARCH_WORKTIME;
+                    end else if(sign_pos_S)
+                        nxt_state <= SEARCH_SWITCH_TIME;
+                    else if(sign_pos_D)
+                        nxt_state <= SEARCH_REMINDTIME;
+                    else if(sign_pos_W)
+                        nxt_state <= STANDBY;
+                end
+                SEARCH_WORKTIME:begin
+                    suspend<=1'b0;
+                    sign<={worktime,WORKTIME};
+                    if(sign_pos_W)
+                        nxt_state <= SEARCH;
+                end
+                SEARCH_SWITCH_TIME:begin
+                    suspend<=1'b0;
+                    sign<={switchtime,SWITCHTIME};
+                    if(sign_pos_W)
+                        nxt_state <= SEARCH;
+                    else if(sign_pos_X)begin
+                        nxt_state <= SET_SWI_HOUR;
+                    end
+                end
+                SEARCH_REMINDTIME:begin
+                    suspend<=1'b0;
+                    sign<={remindtime,REMINDTIME};
+                    if(sign_pos_W)
+                        nxt_state <= SEARCH;
+                    else if(sign_pos_X)
+                        nxt_state <= SET_REMIND_HOUR;
+                end
+                SET_SWI_HOUR:begin
+                    suspend<=1'b0;
+                    sign<={switchtime,SWITCHTIME};
+                    if(sign_pos_A)begin
+                        if(switchtime[23:16]==8'b00100011) begin
+                            switchtime[23:16] <= 8'b00000000;
+                        end
+                        else if(switchtime[19:16]==4'b1001) begin
+                            switchtime[19:16] <= 4'b0000;
+                            switchtime[23:16] <= switchtime[23:16]+1;
+                        end
+                        else switchtime[19:16] <= switchtime[19:16]+1;
+                    end
+                    else if (sign_pos_S)
+                        nxt_state <= SET_SWI_MIN;
+                end
+                SET_SWI_MIN:begin
+                    suspend<=1'b0;
+                    sign<={switchtime,SWITCHTIME};
+                    if(sign_pos_A)begin
+                        if(switchtime[15:8]==8'b01011001) begin
+                             switchtime[15:8] <= 8'b00000000;
+                         end
+                        else if(switchtime[11:8]==4'b1001) begin
+                            switchtime[11:8] <= 4'b0000;
+                            switchtime[15:8] <= switchtime[15:8]+1;
+                        end
+                        else switchtime[11:8] <= switchtime[11:8]+1;
+                    end
+                    else if (sign_pos_S)
+                        nxt_state <= SET_SWI_SEC;
+                end
+                SET_SWI_SEC:begin
+                    suspend<=1'b0;
+                    sign<={switchtime,SWITCHTIME};
+                    if(sign_pos_A)begin
+                        if(switchtime[7:0]==8'b01011001) begin
+                            switchtime[7:0] <= 8'b00000000;
+                        end
+                        else if(switchtime[3:0]==4'b1001) begin
+                            switchtime[3:0] <= 4'b0000;
+                            switchtime[7:0] <= switchtime[7:0]+1;
+                        end
+                        else switchtime[3:0] <= switchtime[3:0]+1;
+                    end
+                    else if (sign_pos_S)
+                        nxt_state <= SEARCH_SWITCH_TIME;
+                end
+                SET_REMIND_HOUR:begin
+                    suspend<=1'b0;
+                    sign<={remindtime,REMINDTIME};
+                    if(sign_pos_A)begin
+                        if(remindtime[23:16] == 8'b00100011) begin  //23+1=0
+                            remindtime[23:16] <= 8'b00000000;
+                        end
+                        else if(remindtime[19:16]==4'b1001) begin
+                             remindtime[19:16] <= 4'b0000;
+                             remindtime[23:16] <= remindtime[23:16]+1;
+                        end
+                        else remindtime[19:16] <= remindtime[19:16]+1;
+                    end
+                    else if (sign_pos_S)
+                        nxt_state <= SET_REMIND_MIN;
+                end
+                SET_REMIND_MIN:begin
+                    suspend<=1'b0;
+                    sign<={remindtime,REMINDTIME};
+                    if(sign_pos_A)begin
+                        if(remindtime[15:8] == 8'b01011001) begin   //59+1=0
+                            remindtime[15:8] <= 8'b00000000;
+                        end
+                        else if(remindtime[11:8]==4'b1001) begin
+                            remindtime[11:8] <= 4'b0000;
+                            remindtime[15:8] <= remindtime[15:8]+1;
+                        end
+                        else remindtime[11:8] <= remindtime[11:8]+1;
+                    end
+                    else if (sign_pos_S)
+                        nxt_state <= SET_REMIND_SEC;
+                end
+                SET_REMIND_SEC:begin
+                    suspend<=1'b0;
+                    sign<={remindtime,REMINDTIME};
+                    if(sign_pos_A)begin
+                        if(remindtime[7:0] == 8'b01011001) begin
+                            remindtime[7:0] <= 8'b00000000;
+                        end
+                        else if(remindtime[3:0]==4'b1001) begin
+                            remindtime[3:0] <= 4'b0000;
+                            remindtime[7:0] <= remindtime[7:0]+1;
+                        end
+                        else remindtime[3:0] <= remindtime[3:0]+1;
+                    end
+                    else if (sign_pos_S)
+                        nxt_state <= SEARCH_REMINDTIME;
+                end
+                default:begin
+                    suspend<=1'b0;
+                end
+            endcase
+        
 endmodule

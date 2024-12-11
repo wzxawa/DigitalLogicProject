@@ -82,8 +82,3 @@ module Main(
     );
 
 endmodule
-
-
-/*
-debounce module with inputs for buttons buttom_A, buttom_S, buttom_W, buttom_X, buttom_D, buttom_rst,clk
-*/
