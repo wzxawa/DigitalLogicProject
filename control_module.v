@@ -50,7 +50,7 @@ module control_module(
 
     assign cnt_5s=(switchtime[23:20]*10+switchtime[19:16])*3600+(switchtime[15:12]*10+switchtime[11:8])*60+(switchtime[7:4]*10+switchtime[3:0])*100000000;
 
-    always @(posedge clk,negedge rst) begin    // 只修改了suspend 和 sign（最后显示的值）
+    always @(posedge clk,negedge rst) begin    // only exchange suspend 和 sign（最后显示的值）
         if(!rst)begin
             nxt_state<=shutdown;
             nowtime<=0;
@@ -199,8 +199,6 @@ module control_module(
     always @(negedge sign_pos_S)begin
         buttom_effect[2]<=1'b0;
     end
-
-
 
     //将所有修改state的模块综合起来
     //state machine
