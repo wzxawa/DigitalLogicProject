@@ -200,6 +200,8 @@ module control_module(
         buttom_effect[2]<=1'b0;
     end
 
+
+
     //将所有修改state的模块综合起来
     //state machine
     always @(posedge clk) begin
