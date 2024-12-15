@@ -38,7 +38,7 @@ module ps2_keyboard_control(
 			num <= 4'd0;
 			temp_data <= 8'd0;
 		end
-		else if (neg_ps2_clk) begin//信号位数为11位，正确
+		else if (neg_ps2_clk) begin//信号位数为11位
 			case (num)
 				4'd0: begin
 					num <= num + 1'b1;

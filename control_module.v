@@ -6,18 +6,19 @@ control module
 */
 
 module control_module(
-    //input [6:0] state,
+    input [6:0]state,
     input sign_pos_A,
     input sign_pos_S,
-    input sign_neg_S,
     input sign_pos_W,
     input sign_pos_X,
+    input sign_neg_X,
     input sign_pos_D,
+    input switch_P,
     input light_dip,
     input rst,
     input clk,
     output reg [31:0] sign,
-    //output reg [6:0] nxt_state
+    output reg [6:0] nxt_state,
 
     output sX //��¼clkout
     ,output sW //��¼ nowtime
@@ -25,60 +26,76 @@ module control_module(
     output sD,
     output light_on_
     );
-    reg [6:0]state,nxt_state;
+   // reg [6:0]state,nxt_state;
 
-    parameter SHUTDOWN=7'b0000000,STANDBY=7'b1000000,MENU=7'b1010000,ONE=7'b1010100,TWO=7'b1011000,THREE=7'b1011100,EXIT_STROM=7'b1011101,CLEAN=7'b1010010,
-              SEARCH=7'b1100000,SEARCH_WORKTIME=7'b1100100,SEARCH_SWITCH_TIME=7'b1101000,SEARCH_REMINDTIME=7'b1101100,
-              SET_SWI_HOUR=7'b1111001,SET_SWI_MIN=7'b1111010,SET_SWI_SEC=7'b1111011,SET_REMIND_HOUR=7'b1111101,SET_REMIND_MIN=7'b1111110,SET_REMIND_SEC=7'b1111111;
-    parameter NOWTIME=8'b00000110,WORKTIME=8'b00000001,SWITCHTIME=8'b00000010,REMINDTIME=8'b00000011;
+    parameter [6:0]SHUTDOWN=7'b0000000,STANDBY=7'b1000000,MENU=7'b1010000,ONE=7'b1010100,TWO=7'b1011000,THREE=7'b1011100,EXIT_STROM=7'b1011101,CLEAN=7'b1010010,
+        SEARCH=7'b1100000,SEARCH_WORKTIME=7'b1100100,SEARCH_SWITCH_TIME=7'b1101000,SEARCH_REMINDTIME=7'b1101100,SEARCH_NOWTIME=7'b1100010,
+        SET_SWI_HOUR=7'b1111001,SET_SWI_MIN=7'b1111010,SET_SWI_SEC=7'b1111011,SET_REMIND_HOUR=7'b1111101,SET_REMIND_MIN=7'b1111110,SET_REMIND_SEC=7'b1111111,
+        SET_NOW_HOUR=7'b1110001,SET_NOW_MIN=7'b1110010,SET_NOW_SEC=7'b1110011,ERROR=7'b1000110,//REMIND=7'b1011001,
+        OFF_WAIT=7'b1010110;
+
+    parameter [7:0]SHOW_STAN=8'b10101010,SHOW_MENU=8'b11101011,SHOW_ONE=8'b10110001,SHOW_TWO=8'b10110010,SHOW_THREE=8'b10110011,SHOW_REMIND_CLEAN=8'b11001010,
+                SHOW_CLEAN=8'b11001100 , SHOW_SEARCH=8'b11111111,SHOW_WORKTIME=8'b11110000,SHOW_NOW=8'b11110001,SHOW_SWITCH=8'b11110010,SHOW_REMIND=8'b11110011,
+                SHOW_SET_H=8'b01010001 , SHOW_SET_M =8'b01010010,SHOW_SET_S=8'b01010011,SHOW_EXIT_STORM=8'b11100101,SHOW_ERROR=8'b11101110;
 
     parameter period=100000000;
 
     reg [23:0]nowtime,worktime,remindtime,switchtime;
+    reg [23:0]save_nowtime,save_remindtime,save_switchtime;
+
+    parameter re_cnt=48'h000000000000;
+    wire [47:0]cnt_5s;
+
+    // Generate clk_100Hz
+    reg clk_100Hz;
+    reg [15:0] clk_100Hz_cnt;
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            clk_100Hz <= 0;
+            clk_100Hz_cnt <= 0;
+        end else begin
+            if (clk_100Hz_cnt == 99999) begin  //
+                clk_100Hz <= ~clk_100Hz;
+                clk_100Hz_cnt <= 0;
+            end else begin
+                clk_100Hz_cnt <= clk_100Hz_cnt + 1;
+            end
+        end
+    end
 
     reg [2:0]buttom_effect; //S,A,D
-    reg [47:0]cnt_S,cnt_A,cnt_D;
-    parameter re_cnt=12'h000000000000,cnt_3s=12'h000011e1a300;
-    wire [47:0]cnt_5s;
-q   
-    reg clkout; //��ʾ1s ��clk
+    reg [47:0]cnt_S,cnt_A,cnt_D,cnt_wait,cnt_error;
+
+    reg clkout; //1s
     reg [31:0]cnt_clk;
     reg storm_once; //only one time for storm
-    reg countdown_storm_yet,countdown_clean_yet;
+    reg countdown_storm_yet,countdown_clean_yet,save_nowtime_yet,save_remindtime_yet,save_switchtime_yet;
+    reg clean_worktime_yet;
+    reg recover_yet;
     reg [7:0]countdown_storm;
     reg [11:0]countdown_clean;
-    parameter countdown60=8'b01100000,countdown180=12'b000110000000;
+    parameter countdown60=8'b01100000,countdown180=12'b000110000000;//12'b000000001000;
 
     //test
-    assign sX=clkout;//clkout
-    assign sW=nowtime[0];//nowtime
+    assign sX=(clkout)&(worktime>=remindtime);//clkout
+    assign sW=0;//nowtime
     assign sA=state[6];
-    assign sD=nowtime[1];
+    assign sD=0;
 
     reg suspend; // work or not -> worktime++
     assign light_on_=(state[6])&light_dip;
 
-    assign cnt_5s=(switchtime[23:20]*10+switchtime[19:16])*3600+(switchtime[15:12]*10+switchtime[11:8])*60+(switchtime[7:4]*10+switchtime[3:0])*100000000;
-    //to
-
-    always @(nxt_state)begin
-        buttom_effect[1:0]<=3'b00;
-        cnt_A=re_cnt;
-        cnt_D=re_cnt;
-        state=nxt_state;
-    end
-/*
-    always @(negedge sign_pos_S)begin
-        buttom_effect[2]<=1'b0;
-    end*/
+    assign cnt_5s=(switchtime[23:20]*10+switchtime[19:16])*3600+(switchtime[15:12]*10+switchtime[11:8])*60+(switchtime[7:4]*10+switchtime[3:0]); // s
 
     always @(posedge clkout,negedge rst)begin
         if(!rst)begin
-            nowtime<=24'b000000000000000000000000;
-            worktime<=24'b000000000000000000000000;
+            nowtime<=24'b0;
+            worktime<=24'b0;
+            countdown_clean<=12'b0;
+            countdown_storm<=8'b0;
         end
         else begin
-            //���� nowtimes
             if(state[6]==1'b1)begin
                 if(nowtime[3:0]==4'b1001)begin //second ones
                     if(nowtime[7:4]==4'b0101)begin //second tens
@@ -117,107 +134,189 @@ q
             else begin
                 nowtime<=24'b000000000000000000000000;
                 worktime<=0;
+                countdown_clean<=0;
+                countdown_storm<=0;
             end
 
-            //suspend,countdown_storm,countdown_clean ��Ϊ��ʱ����ʾ--
-            if(suspend==1'b1)begin
-                worktime[7:0]<=worktime[7:0]+8'b00000001;
-                if(worktime[7:0]==8'b01100000)begin
-                    worktime[7:0]<=8'b00000000;
-                    worktime[15:8]<=worktime[15:8]+1;
-                    if(worktime[15:8]==8'b01100000)begin
-                        worktime[15:8]<=8'b00000000;
-                        worktime[23:16]<=worktime[23:16]+1;
+            // nowtimes
+            if(save_nowtime_yet==1'b1)begin
+                nowtime<=save_nowtime;
+            end
+
+            if(recover_yet==1'b1)begin
+                worktime<=24'b0;
+                countdown_clean<=12'b0;
+                countdown_storm<=8'b0;
+            end
+            else begin
+                //suspend,countdown_storm,countdown_clean
+                if(suspend==1'b1)begin
+                    worktime[3:0]<=worktime[3:0]+4'b0001;
+                    if(worktime[3:0]==4'b1010)begin
+                        worktime[3:0]<=8'b0000;
+                        worktime[7:4]<=worktime[7:4]+4'b0001;
+                    end
+                    if(worktime[7:0]==8'b01100000)begin
+                        worktime[7:0]<=8'b00000000;
+                        worktime[15:8]<=worktime[15:8]+8'b00000001;
+                        if(worktime[15:8]==8'b01100000)begin
+                            worktime[15:8]<=8'b00000000;
+                            worktime[23:16]<=worktime[23:16]+8'b00000001;
+                        end
                     end
                 end
-                if(worktime==remindtime)begin
-                    //to complete
-                    //nxt_state<= ;
+                else if(clean_worktime_yet==1'b1)begin
+                    worktime<=0;
                 end
-            end
-
-            //
-            if(countdown_storm!=0 && state==THREE )begin
-                if(countdown_storm[3:0]==4'b0000)begin
-                    countdown_storm[3:0]<=4'b1001;
-                    countdown_storm[7:4]<=countdown_storm[7:4]-4'b0001;
-                end
-                else countdown_storm[3:0]<=countdown_storm[3:0]-4'b0001;
-            end
-            if(countdown_clean!=0 && state==CLEAN )begin
-                if(countdown_clean[3:0]==4'b0000)begin
-                    countdown_clean[3:0]<=4'b1001;
-                    if(countdown_clean[7:4]==4'b0000)begin
-                        countdown_clean[7:4]<=4'b1001;
-                        countdown_clean[11:8]<=countdown_clean[11:8]-4'b0001;
+                //counter time
+                if(countdown_storm!=0)begin
+                    if(state==THREE || state==EXIT_STROM)begin
+                        if(countdown_storm[3:0]==4'b0000)begin
+                            countdown_storm[3:0]<=4'b1001;
+                            countdown_storm[7:4]<=countdown_storm[7:4]-4'b0001;
+                        end
+                        else countdown_storm[3:0]<=countdown_storm[3:0]-4'b0001;
                     end
-                    else countdown_clean[7:4]<=countdown_clean[7:4]-4'b0001;
+                    else countdown_storm<=0;
                 end
-                else countdown_clean[3:0]<=countdown_clean[3:0]-4'b0001;
-            end
+                if(countdown_clean!=0)begin
+                    if(state==CLEAN)begin
+                        if(countdown_clean[3:0]==4'b0000)begin
+                            countdown_clean[3:0]<=4'b1001;
+                            if(countdown_clean[7:4]==4'b0000)begin
+                                countdown_clean[7:4]<=4'b1001;
+                                countdown_clean[11:8]<=countdown_clean[11:8]-4'b0001;
+                            end
+                            else countdown_clean[7:4]<=countdown_clean[7:4]-4'b0001;
+                        end
+                        else countdown_clean[3:0]<=countdown_clean[3:0]-4'b0001;
+                    end
+                    else countdown_clean<=0;
+                end
 
-            if(countdown_storm_yet==1'b1)begin
-                countdown_storm<=countdown60;
-            end
-            if(countdown_clean_yet==1'b1)begin
-                countdown_clean<=countdown180;
+                if(countdown_storm_yet==1'b1)begin
+                    countdown_storm<=countdown60;
+                end
+                if(countdown_clean_yet==1'b1)begin
+                    countdown_clean<=countdown180;
+                end
             end
         end
     end
 
-    //�������޸�state��ģ���ۺ�����
     //state machine
     always @(posedge clk,negedge rst) begin
-        if(!rst)begin
-            state<=STANDBY;//test
-            switchtime<=24'b000000000000000000000101;//to complete
-            remindtime<=24'b000100000000000000000000;   
-            buttom_effect<=3'b000;
-            cnt_A=re_cnt;
-            cnt_S=re_cnt;
-            cnt_D=re_cnt;
+        if(!rst)begin// Back to initial state
             clkout<=0;
+            nxt_state<=SHUTDOWN;//test
+            switchtime<=24'b000000000000000000000101;
+            remindtime<=24'b000100000000000000000000;
+            buttom_effect<=3'b000;
+            cnt_A <=re_cnt;
+            cnt_S <=re_cnt;
+            cnt_D <=re_cnt;
+            cnt_wait <=re_cnt;
             cnt_clk<=0;
             storm_once<=1'b0;
+            save_nowtime_yet<=1'b0;
+            clean_worktime_yet<=1'b0;
             countdown_clean_yet<=1'b0;
             countdown_storm_yet<=1'b0;
+            save_remindtime_yet<=1'b0;
+            save_switchtime_yet<=1'b0;
             suspend<=1'b0;
-            sign<={nowtime,NOWTIME};
+            sign<={nowtime,SHOW_STAN};
+        end else if(state[6] && sign_pos_W && switch_P)begin
+            clkout<=0;
+            recover_yet<=1'b1;
+            nxt_state<=STANDBY;
+            switchtime<=24'b000000000000000000000101;
+            remindtime<=24'b000100000000000000000000;
+            buttom_effect<=3'b000;
+            save_nowtime_yet<=1'b0;
+            clean_worktime_yet<=1'b0;
+            countdown_clean_yet<=1'b0;
+            countdown_storm_yet<=1'b0;
+            save_remindtime_yet<=1'b0;
+            save_switchtime_yet<=1'b0;
+            suspend<=1'b0;
+            sign<={nowtime,SHOW_STAN};
         end
         else begin
+
+            // Long push to turn pn/off
+            if(sign_pos_X == 1'b1 && switch_P &&state[6]==1'b1) begin
+                buttom_effect[2] <= 1'b1;
+            end
+            else if(sign_neg_X == 1'b1 || !switch_P || state[6]==1'b0) begin
+                buttom_effect[2] <= 1'b0;
+            end
+
             // buttom_S -> off/on
             if(buttom_effect[2]==1'b1)begin 
                 cnt_S<=cnt_S+1;
-                if(cnt_S>=cnt_3s)begin
+                if(cnt_S>=300000000)begin // Modify time here
                     if(state[6]==1'b1)begin
-                        //flag<=
                         nxt_state<=SHUTDOWN;
+                        clkout<=1'b0;
                     end
-                    else begin
-                        nxt_state<=STANDBY;
-                    end
-                    buttom_effect[2]<=1'b0;
-                    cnt_S<=re_cnt;
+                    buttom_effect[2] <=1'b0;
+                    cnt_S <=re_cnt;
                 end
             end
             else begin
                 if(cnt_S!=re_cnt) cnt_S<=re_cnt;
             end
-            //cnt_A,cnt_D
-            if(buttom_effect[1]==1'b1)begin
-                cnt_A<=cnt_A+1;
-                if(cnt_A>=cnt_5s)begin
-                    cnt_A<=re_cnt;
-                    buttom_effect[1]<=1'b0;
+
+            // Push A to count down
+            if (buttom_effect[1] == 1'b1) begin
+                cnt_A <= cnt_A + 1;
+                if (cnt_A >= cnt_5s*100000000) begin  
+                    cnt_A <= 0;
+                    buttom_effect[1] <= 1'b0;
                 end
             end
-            if(buttom_effect[0]==1'b1)begin
-                cnt_D<=cnt_D+1;
-                if(cnt_D>=cnt_5s)begin
-                    cnt_D<=re_cnt;
-                    buttom_effect[0]<=1'b0;
+
+            // Push D to count down
+            if (buttom_effect[0] == 1'b1) begin
+                if(cnt_D == 0)begin
+                    nxt_state<=OFF_WAIT;
+                end
+                cnt_wait <= cnt_wait + 1;
+                if(cnt_wait == 100000000)begin
+                    cnt_wait<=0;
+                    cnt_D<=cnt_D+1;
+                    sign <= sign-1;
+                end
+                if (cnt_D >= cnt_5s) begin  
+                    cnt_D <= 0;
+                    buttom_effect[0] <= 1'b0;
+                    nxt_state<=STANDBY;
                 end
             end
+
+            //D->A, shutdown
+            if(state==OFF_WAIT && buttom_effect[0]==1'b1 && sign_pos_A && switch_P)begin
+                buttom_effect[0]<=1'b0;
+                nxt_state<=SHUTDOWN;
+                clkout<=1'b0;
+                cnt_D<=re_cnt;
+            end else if((state==STANDBY || state==OFF_WAIT) && sign_pos_D && switch_P) begin //to complete
+                    nxt_state<=OFF_WAIT;
+                    buttom_effect[0]<=1'b1;
+                    cnt_D<=re_cnt; // Clear cnt_B
+            end 
+
+            //remindtime<= worktime
+            // if(remindtime<=worktime && state!=REMIND)begin
+            //     if(state==STANDBY)begin
+                    
+            //     end
+            //     else if(state==CLEAN)begin
+                    
+            //     end
+            //     else nxt_state<=REMIND;
+            // end
                 
             //clkout, 1ns -> 1s
             if(cnt_clk==(period>>1)-1)begin
@@ -228,232 +327,483 @@ q
                 cnt_clk<=cnt_clk+1;
             end
 
+            //recover
+            if(recover_yet==1'b1 && worktime==0 && countdown_clean==12'b0 && countdown_storm==8'b0)begin
+                recover_yet<=1'b0;
+            end
+
+            //clean worktime
+            if(clean_worktime_yet==1'b0 && (sign_pos_S && switch_P))begin
+                clean_worktime_yet<=1'b1;
+            end
+            else if(clean_worktime_yet==1'b1 && worktime==0)begin
+                clean_worktime_yet<=1'b0;
+            end
+
+            //save_nowtime
+            else if(save_nowtime==nowtime && save_nowtime_yet==1'b1)begin
+                save_nowtime_yet<=1'b0;
+            end
+
             case(state)
                 SHUTDOWN:begin
-                    switchtime<=24'b000000000000000000000101;//to complete
-                    remindtime<=24'b000100000000000000000000;
-                    storm_once<=1'b0;//�Ƿ�쫷�ģʽ��
-                    suspend<=1'b0;//�Ƿ��ڹ���
-                    sign<={nowtime,NOWTIME};//��ʾ��ǰʱ���״�?
-                    if(sign_pos_A)begin
-                        buttom_effect[1]<=1'b1;//��������
+                    clkout<=1'b1;
+                    storm_once<=1'b0;
+                    suspend<=1'b0;
+                    sign<={nowtime,SHOW_STAN};
+                    if(sign_pos_A && switch_P)begin
+                        buttom_effect[1]<=1'b1;
                         cnt_A<=re_cnt;
                     end
-                    else if(buttom_effect[1]==1'b1 && sign_pos_D)begin
+                    else if(buttom_effect[1]==1'b1 && sign_pos_D && switch_P)begin
                         buttom_effect[1]<=1'b0;
                         nxt_state <= STANDBY;
+                        cnt_A<=re_cnt; // Clear cnt_A
+                    end
+                    else if(sign_pos_X && switch_P)begin
+                        nxt_state<=STANDBY;
                     end
                 end
                 STANDBY:begin
-                    sign<={nowtime,NOWTIME};
-                    if(buttom_effect[0]==1'b1 && sign_pos_A)begin
-                        buttom_effect[0]<=1'b0;
-                        nxt_state <= SHUTDOWN;
-                    end else if(sign_pos_D) begin
-                            buttom_effect[0]<=1'b1;
-                            cnt_D<=re_cnt;
-                    end else if(sign_pos_W) begin
+                    suspend<=1'b0;
+                    if(save_nowtime_yet==1'b1) sign<={save_nowtime,SHOW_STAN};
+                    else sign<={nowtime,SHOW_STAN};
+                    if(sign_pos_W && !switch_P) begin
                         nxt_state <= MENU;
-                    end else if(sign_pos_X) begin
+                    end else if(sign_pos_X && !switch_P) begin
                         nxt_state <= SEARCH;
                     end
                 end
-                MENU:begin
-                    sign<={nowtime,NOWTIME};
+                OFF_WAIT:begin
                     suspend<=1'b0;
-                    if(sign_pos_A)begin
+                    sign<={nowtime,(cnt_5s-cnt_D)/10*16+(cnt_5s-cnt_D)%10};
+                end
+                MENU:begin
+                    suspend<=1'b0;
+                    sign<={nowtime,SHOW_MENU};
+                    suspend<=1'b0;
+                    if(sign_pos_A && !switch_P)begin
                         nxt_state <= ONE;
-                    end else if(sign_pos_S)begin
+                    end else if(sign_pos_S && !switch_P)begin
                         nxt_state <= TWO;
-                    end else if(sign_pos_D && storm_once==1'b0)begin
+                    end else if(sign_pos_D && storm_once==1'b0 && !switch_P)begin
                         storm_once<=1'b1;
                         nxt_state <= THREE;
                         countdown_storm_yet<=1'b1;
-                    end else if(sign_pos_X)begin
+                    end else if(sign_pos_X && !switch_P)begin
                         nxt_state <= CLEAN;
                         countdown_clean_yet<=1'b1;
-                    end
+                    end 
                     //nxt_state<=;
                 end
                 ONE:begin
-                    sign<={nowtime,NOWTIME};
                     suspend<=1'b1;
-                    if(sign_pos_S)begin
+                    sign<={nowtime,SHOW_ONE};
+                    suspend<=1'b1;
+                    if(sign_pos_S && !switch_P)begin
                         nxt_state <= TWO;
-                    end else if(sign_pos_W)begin
+                    end else if(sign_pos_W && !switch_P)begin
                         nxt_state <= STANDBY;
                     end
                 end
                 TWO:begin
-                    sign<={nowtime,NOWTIME};
                     suspend<=1'b1;
-                    if(sign_pos_A)begin
-                        nxt_state <= TWO;
-                    end else if(sign_pos_W)begin
+                    sign<={nowtime,SHOW_TWO};
+                    suspend<=1'b1;
+                    if(sign_pos_A && !switch_P)begin
+                        nxt_state <= ONE;
+                    end else if(sign_pos_W && !switch_P)begin
                         nxt_state <= STANDBY;
                     end
                 end
                 THREE:begin
                     suspend<=1'b1;
-                    sign<={nowtime,countdown60};
-                    // to complete
                     if(countdown_storm_yet==1'b1)begin
                         if(countdown_storm>8'b00000000)begin
+                            sign<={16'b0,countdown_storm,SHOW_THREE};
                             countdown_storm_yet<=1'b0;
                         end
+                        else sign<={24'b01100000,SHOW_THREE};
                     end
-                    else begin if(countdown_storm==8'b00000000)begin
+                    else begin
+                        sign<={16'b0,countdown_storm,SHOW_THREE}; 
+                        if(countdown_storm==8'b00000000)begin
+                        nxt_state<=TWO;
+                    end
+                    end
+                    if(sign_pos_W && !switch_P)begin
+                        nxt_state<=EXIT_STROM;
+                        //mm,serect
+                        clkout<=1'b0;
+                        countdown_storm_yet<=1'b1;
+                    end
+                end
+                EXIT_STROM:begin
+                    suspend<=1'b1;
+                    if(countdown_storm_yet==1'b1)begin
+                        if(countdown_storm>8'b00000000 && clkout==1'b1 && cnt_clk>1)begin
+                            sign<={16'b0,countdown_storm,SHOW_EXIT_STORM};
+                            countdown_storm_yet<=1'b0;
+                        end
+                        else sign<={24'b01100000,SHOW_EXIT_STORM};
+                    end
+                    else begin 
+                        sign<={16'b0,countdown_storm,SHOW_EXIT_STORM};
+                        if(countdown_storm==8'b00000000)begin
                         nxt_state<=STANDBY;
                     end
                     end
                 end
                 CLEAN:begin
                     suspend<=1'b0;
-                    sign<={20'b0,countdown_clean};
-                    // to complete
                     if(countdown_clean_yet==1'b1)begin
                         if(countdown_clean>12'b000000000000)begin
+                            sign<={12'b0,countdown_clean,SHOW_CLEAN};
                             countdown_clean_yet<=1'b0;
                         end
+                        else sign<={24'b000110000000,SHOW_CLEAN};
                     end
-                    else begin if(countdown_clean==12'b000000000000)begin
-                        nxt_state<=STANDBY;
-                    end
+                    else begin 
+                        sign<={12'b0,countdown_clean,SHOW_CLEAN};
+                        if(countdown_clean==12'b000000000000)begin
+                            nxt_state<=STANDBY;
+                            clean_worktime_yet<=1'b1;
+                        end
                     end
                 end
                 SEARCH:begin
-                    sign<={nowtime,NOWTIME};
-                    if(sign_pos_A)begin
+                    suspend<=1'b0;
+                    sign<={nowtime,SHOW_SEARCH};
+                    if(sign_pos_A && !switch_P)begin
+                        nxt_state <= SEARCH_NOWTIME;
+                    end else if(sign_pos_X && !switch_P)begin
                         nxt_state <= SEARCH_WORKTIME;
-                    end else if(sign_pos_S)
+                    end else if(sign_pos_S && !switch_P)begin
                         nxt_state <= SEARCH_SWITCH_TIME;
-                    else if(sign_pos_D)
+                    end else if(sign_pos_D && !switch_P)begin
                         nxt_state <= SEARCH_REMINDTIME;
-                    else if(sign_pos_W)
+                    end else if(sign_pos_W && !switch_P)begin
                         nxt_state <= STANDBY;
+                    end
+                end
+                SEARCH_NOWTIME:begin
+                    suspend<=1'b0;
+                    if(save_nowtime_yet==1'b0)save_nowtime<=nowtime;
+                    sign<={save_nowtime,SHOW_NOW};
+                    if(sign_pos_W && !switch_P)
+                        nxt_state <= SEARCH;
+                    else if(sign_pos_X && !switch_P)begin
+                        nxt_state <= SET_NOW_HOUR;
+                    end
                 end
                 SEARCH_WORKTIME:begin
                     suspend<=1'b0;
-                    sign<={worktime,WORKTIME};
-                    if(sign_pos_W)
+                    sign<={worktime,SHOW_WORKTIME};
+                    if(sign_pos_W && !switch_P)
                         nxt_state <= SEARCH;
                 end
                 SEARCH_SWITCH_TIME:begin
                     suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                    if(sign_pos_W)
+                    if(save_switchtime_yet==1'b0)save_switchtime<=switchtime;
+                    else begin
+                        switchtime<=save_switchtime;
+                        save_switchtime_yet<=1'b0;
+                    end
+                    sign<={save_switchtime,SHOW_SWITCH};
+                    if(sign_pos_W && !switch_P)
                         nxt_state <= SEARCH;
-                    else if(sign_pos_X)begin
-                        nxt_state <= SET_SWI_HOUR;
+                    else if(sign_pos_X && !switch_P)begin
+                        nxt_state <= SET_SWI_SEC;  //test
                     end
                 end
                 SEARCH_REMINDTIME:begin
                     suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                    if(sign_pos_W)
+                    if(save_remindtime_yet==1'b0)save_remindtime<=remindtime;
+                    else begin
+                        remindtime<=save_remindtime;
+                        save_remindtime_yet<=1'b0;
+                    end
+                    sign<={save_remindtime,SHOW_REMIND};
+                    if(sign_pos_W && !switch_P)
                         nxt_state <= SEARCH;
-                    else if(sign_pos_X)
+                    else if(sign_pos_X && !switch_P)
                         nxt_state <= SET_REMIND_HOUR;
+                end
+                SET_NOW_HOUR:begin
+                    suspend<=1'b0;
+                    sign<={save_nowtime,SHOW_SET_H};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_nowtime[23:16]==8'b00100011) begin
+                            save_nowtime[23:16] <= 8'b00000000;
+                        end
+                        else if(save_nowtime[19:16]==4'b1001) begin
+                            save_nowtime[19:16] <= 4'b0000;
+                            save_nowtime[23:20] <= save_nowtime[23:20]+1;
+                        end
+                        else save_nowtime[19:16] <= save_nowtime[19:16]+1;
+                    end
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_nowtime[23:16]==8'b00000000) begin
+                            save_nowtime[23:16] <= 8'b00100011;
+                        end
+                        else if(save_nowtime[19:16]==4'b0000) begin
+                            save_nowtime[19:16] <= 4'b1001;
+                            save_nowtime[23:20] <= save_nowtime[23:20]-1;
+                        end
+                        else save_nowtime[19:16] <= save_nowtime[19:16]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)
+                        nxt_state <= SET_NOW_MIN;
+                end
+                SET_NOW_MIN:begin
+                    suspend<=1'b0;
+                    sign<={save_nowtime,SHOW_SET_M};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_nowtime[15:8]==8'b01011001) begin
+                            save_nowtime[15:8] <= 8'b00000000;
+                        end
+                        else if(save_nowtime[11:8]==4'b1001) begin
+                            save_nowtime[11:8] <= 4'b0000;
+                            save_nowtime[15:12] <= save_nowtime[15:12]+1;
+                        end
+                        else save_nowtime[11:8] <= save_nowtime[11:8]+1;
+                    end
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_nowtime[15:8]==8'b00000000) begin
+                            save_nowtime[15:8] <= 8'b01011001;
+                        end
+                        else if(save_nowtime[11:8]==4'b0000) begin
+                            save_nowtime[11:8] <= 4'b1001;
+                            save_nowtime[15:12] <= save_nowtime[15:12]-1;
+                        end
+                        else save_nowtime[11:8] <= save_nowtime[11:8]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)
+                        nxt_state <= SET_NOW_SEC;
+                end
+                SET_NOW_SEC:begin
+                    suspend<=1'b0;
+                    sign<={save_nowtime,SHOW_SET_S};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_nowtime[7:0]==8'b01011001) begin
+                            save_nowtime[7:0] <= 8'b00000000;
+                        end
+                        else if(save_nowtime[3:0]==4'b1001) begin
+                            save_nowtime[3:0] <= 4'b0000;
+                            save_nowtime[7:4] <= save_nowtime[7:4]+1;
+                        end
+                        else save_nowtime[3:0] <= save_nowtime[3:0]+1;
+                    end
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_nowtime[7:0]==8'b00000000) begin
+                            save_nowtime[7:0] <= 8'b01011001;
+                        end
+                        else if(save_nowtime[3:0]==4'b0000) begin
+                            save_nowtime[3:0] <= 4'b1001;
+                            save_nowtime[7:4] <= save_nowtime[7:4]-1;
+                        end
+                        else save_nowtime[3:0] <= save_nowtime[3:0]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)begin
+                        nxt_state <= STANDBY;
+                        save_nowtime_yet<=1'b1;
+                    end
                 end
                 SET_SWI_HOUR:begin
                     suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                    if(sign_pos_A)begin
-                        if(switchtime[23:16]==8'b00100011) begin
-                            switchtime[23:16] <= 8'b00000000;
+                    sign<={save_switchtime,SHOW_SET_H};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_switchtime[23:16]==8'b00100011) begin
+                            save_switchtime[23:16] <= 8'b00000000;
                         end
-                        else if(switchtime[19:16]==4'b1001) begin
-                            switchtime[19:16] <= 4'b0000;
-                            switchtime[23:16] <= switchtime[23:16]+1;
+                        else if(save_switchtime[19:16]==4'b1001) begin
+                            save_switchtime[19:16] <= 4'b0000;
+                            save_switchtime[23:20] <= save_switchtime[23:20]+1;
                         end
-                        else switchtime[19:16] <= switchtime[19:16]+1;
+                        else save_switchtime[19:16] <= save_switchtime[19:16]+1;
                     end
-                    else if (sign_pos_S)
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_switchtime[23:16]==8'b00000000) begin
+                            save_switchtime[23:16] <= 8'b00100011;
+                        end
+                        else if(save_switchtime[19:16]==4'b0000) begin
+                            save_switchtime[19:16] <= 4'b1001;
+                            save_switchtime[23:20] <= save_switchtime[23:20]-1;
+                        end
+                        else save_switchtime[19:16] <= save_switchtime[19:16]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)
                         nxt_state <= SET_SWI_MIN;
                 end
                 SET_SWI_MIN:begin
                     suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                    if(sign_pos_A)begin
-                        if(switchtime[15:8]==8'b01011001) begin
-                             switchtime[15:8] <= 8'b00000000;
+                    sign<={save_switchtime,SHOW_SET_M};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_switchtime[15:8]==8'b01011001) begin
+                             save_switchtime[15:8] <= 8'b00000000;
                          end
-                        else if(switchtime[11:8]==4'b1001) begin
-                            switchtime[11:8] <= 4'b0000;
-                            switchtime[15:8] <= switchtime[15:8]+1;
+                        else if(save_switchtime[11:8]==4'b1001) begin
+                            save_switchtime[11:8] <= 4'b0000;
+                            save_switchtime[15:12] <= save_switchtime[15:12]+1;
                         end
-                        else switchtime[11:8] <= switchtime[11:8]+1;
+                        else save_switchtime[11:8] <= save_switchtime[11:8]+1;
                     end
-                    else if (sign_pos_S)
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_switchtime[15:8]==8'b00000000) begin
+                            save_switchtime[15:8] <= 8'b01011001;
+                        end
+                        else if(save_switchtime[11:8]==4'b0000) begin
+                            save_switchtime[11:8] <= 4'b1001;
+                            save_switchtime[15:12] <= save_switchtime[15:12]-1;
+                        end
+                        else save_switchtime[11:8] <= save_switchtime[11:8]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)
                         nxt_state <= SET_SWI_SEC;
                 end
                 SET_SWI_SEC:begin
                     suspend<=1'b0;
-                    sign<={switchtime,SWITCHTIME};
-                    if(sign_pos_A)begin
-                        if(switchtime[7:0]==8'b01011001) begin
-                            switchtime[7:0] <= 8'b00000000;
+                    sign<={save_switchtime,SHOW_SET_S};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_switchtime[7:0]==8'b01011001) begin
+                            save_switchtime[7:0] <= 8'b00000000;
                         end
-                        else if(switchtime[3:0]==4'b1001) begin
-                            switchtime[3:0] <= 4'b0000;
-                            switchtime[7:0] <= switchtime[7:0]+1;
+                        else if(save_switchtime[3:0]==4'b1001) begin
+                            save_switchtime[3:0] <= 4'b0000;
+                            save_switchtime[7:4] <= save_switchtime[7:4]+1;
                         end
-                        else switchtime[3:0] <= switchtime[3:0]+1;
+                        else save_switchtime[3:0] <= save_switchtime[3:0]+1;
                     end
-                    else if (sign_pos_S)
-                        nxt_state <= SEARCH_SWITCH_TIME;
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_switchtime[7:0]==8'b00000000) begin
+                            save_switchtime[7:0] <= 8'b01011001;
+                        end
+                        else if(save_switchtime[3:0]==4'b0000) begin
+                            save_switchtime[3:0] <= 4'b1001;
+                            save_switchtime[7:4] <= save_switchtime[7:4]-1;
+                        end
+                        else save_switchtime[3:0] <= save_switchtime[3:0]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)begin
+                        if(save_switchtime==0)begin
+                            nxt_state<=ERROR;
+                        end
+                        else begin 
+                            save_switchtime_yet<=1'b1;
+                            nxt_state <= SEARCH_SWITCH_TIME;
+                        end
+                    end
                 end
                 SET_REMIND_HOUR:begin
                     suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                    if(sign_pos_A)begin
-                        if(remindtime[23:16] == 8'b00100011) begin  //23+1=0
-                            remindtime[23:16] <= 8'b00000000;
+                    sign<={save_remindtime,SHOW_SET_H};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_remindtime[23:16] == 8'b00100011) begin  //23+1=0
+                            save_remindtime[23:16] <= 8'b00000000;
                         end
-                        else if(remindtime[19:16]==4'b1001) begin
-                             remindtime[19:16] <= 4'b0000;
-                             remindtime[23:16] <= remindtime[23:16]+1;
+                        else if(save_remindtime[19:16]==4'b1001) begin
+                             save_remindtime[19:16] <= 4'b0000;
+                             save_remindtime[23:20] <= save_remindtime[23:20]+1;
                         end
-                        else remindtime[19:16] <= remindtime[19:16]+1;
+                        else save_remindtime[19:16] <= save_remindtime[19:16]+1;
                     end
-                    else if (sign_pos_S)
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_remindtime[23:16] == 8'b00000000) begin
+                            save_remindtime[23:16] <= 8'b00100011;
+                        end
+                        else if(save_remindtime[19:16]==4'b0000) begin
+                            save_remindtime[19:16] <= 4'b1001;
+                            save_remindtime[23:20] <= save_remindtime[23:20]-1;
+                        end
+                        else save_remindtime[19:16] <= save_remindtime[19:16]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)
                         nxt_state <= SET_REMIND_MIN;
                 end
                 SET_REMIND_MIN:begin
                     suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                    if(sign_pos_A)begin
-                        if(remindtime[15:8] == 8'b01011001) begin   //59+1=0
-                            remindtime[15:8] <= 8'b00000000;
+                    sign<={save_remindtime,SHOW_SET_M};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_remindtime[15:8] == 8'b01011001) begin   //59+1=0
+                            save_remindtime[15:8] <= 8'b00000000;
                         end
-                        else if(remindtime[11:8]==4'b1001) begin
-                            remindtime[11:8] <= 4'b0000;
-                            remindtime[15:8] <= remindtime[15:8]+1;
+                        else if(save_remindtime[11:8]==4'b1001) begin
+                            save_remindtime[11:8] <= 4'b0000;
+                            save_remindtime[15:12] <= save_remindtime[15:12]+1;
                         end
-                        else remindtime[11:8] <= remindtime[11:8]+1;
+                        else save_remindtime[11:8] <= save_remindtime[11:8]+1;
                     end
-                    else if (sign_pos_S)
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_remindtime[15:8] == 8'b00000000) begin
+                            save_remindtime[15:8] <= 8'b01011001;
+                        end
+                        else if(save_remindtime[11:8]==4'b0000) begin
+                            save_remindtime[11:8] <= 4'b1001;
+                            save_remindtime[15:12] <= save_remindtime[15:12]-1;
+                        end
+                        else save_remindtime[11:8] <= save_remindtime[11:8]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)
                         nxt_state <= SET_REMIND_SEC;
                 end
                 SET_REMIND_SEC:begin
                     suspend<=1'b0;
-                    sign<={remindtime,REMINDTIME};
-                    if(sign_pos_A)begin
-                        if(remindtime[7:0] == 8'b01011001) begin
-                            remindtime[7:0] <= 8'b00000000;
+                    sign<={save_remindtime,SHOW_SET_S};
+                    if(sign_pos_A && !switch_P)begin
+                        if(save_remindtime[7:0] == 8'b01011001) begin
+                            save_remindtime[7:0] <= 8'b00000000;
                         end
-                        else if(remindtime[3:0]==4'b1001) begin
-                            remindtime[3:0] <= 4'b0000;
-                            remindtime[7:0] <= remindtime[7:0]+1;
+                        else if(save_remindtime[3:0]==4'b1001) begin
+                            save_remindtime[3:0] <= 4'b0000;
+                            save_remindtime[7:4] <= save_remindtime[7:4]+1;
                         end
-                        else remindtime[3:0] <= remindtime[3:0]+1;
+                        else save_remindtime[3:0] <= save_remindtime[3:0]+1;
                     end
-                    else if (sign_pos_S)
-                        nxt_state <= SEARCH_REMINDTIME;
+                    else if(sign_pos_D && !switch_P)begin
+                        if(save_remindtime[7:0] == 8'b00000000) begin
+                            save_remindtime[7:0] <= 8'b01011001;
+                        end
+                        else if(save_remindtime[3:0]==4'b0000) begin
+                            save_remindtime[3:0] <= 4'b1001;
+                            save_remindtime[7:4] <= save_remindtime[7:4]-1;
+                        end
+                        else save_remindtime[3:0] <= save_remindtime[3:0]-1;
+                    end
+                    else if (sign_pos_S && !switch_P)begin
+                        if(save_remindtime==0)begin
+                            nxt_state<=ERROR;
+                        end
+                        else begin 
+                            save_remindtime_yet<=1'b1;
+                            nxt_state <= SEARCH_REMINDTIME;
+                        end
+                    end
+                end
+                // REMIND:begin
+                //     suspend<=1'b0;
+                //     sign<={nowtime,SHOW_REMIND_CLEAN};
+                //     if(sign_pos_X && !switch_P)begin
+                //         nxt_state<=CLEAN;
+                //         countdown_clean_yet<=1'b1;
+                //     end
+                //     else if(sign_pos_D && !switch_P)begin
+                //         nxt_state<=STANDBY;
+                //         clean_worktime_yet<=1'b1;
+                //     end
+                //     else nxt_state<=REMIND;
+                // end
+                ERROR:begin
+                    suspend<=1'b0;
+                    cnt_error<=cnt_error+1;
+                    sign<={nowtime,SHOW_ERROR};
+                    if(cnt_error>=200000000)begin
+                        nxt_state<=STANDBY;
+                        cnt_error<=0;
+                    end
                 end
                 default:begin
                     suspend<=1'b0;
-                    sign<={nowtime,NOWTIME};
+                    sign<={nowtime,SHOW_STAN};
                 end
             endcase
         end
