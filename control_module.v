@@ -40,7 +40,7 @@ module control_module(
     reg [47:0]cnt_S,cnt_A,cnt_D;
     parameter re_cnt=12'h000000000000,cnt_3s=12'h000011e1a300;
     wire [47:0]cnt_5s;
-
+q   
     reg clkout; //��ʾ1s ��clk
     reg [31:0]cnt_clk;
     reg storm_once; //only one time for storm
