@@ -1,10 +1,5 @@
 `timescale 1ns / 1ps
 
-/*
-special state: clean_state= 1010010 ; exit from storm= 1011101
-control module
-*/
-
 module control_module(
     input [6:0]state,
     input sign_pos_A,
@@ -19,31 +14,16 @@ module control_module(
     input clk,
     output reg [31:0] sign,
     output reg [6:0] nxt_state,
-
-    output sX //��¼clkout
-    ,output sW //��¼ nowtime
-    ,output sA,
-    output sD,
-    output light_on_
+    output reminder,
+    output opening,
+    output light_on
     );
-   // reg [6:0]state,nxt_state;
 
-    parameter [6:0]SHUTDOWN=7'b0000000,STANDBY=7'b1000000,MENU=7'b1010000,ONE=7'b1010100,TWO=7'b1011000,THREE=7'b1011100,EXIT_STROM=7'b1011101,CLEAN=7'b1010010,
-        SEARCH=7'b1100000,SEARCH_WORKTIME=7'b1100100,SEARCH_SWITCH_TIME=7'b1101000,SEARCH_REMINDTIME=7'b1101100,SEARCH_NOWTIME=7'b1100010,
-        SET_SWI_HOUR=7'b1111001,SET_SWI_MIN=7'b1111010,SET_SWI_SEC=7'b1111011,SET_REMIND_HOUR=7'b1111101,SET_REMIND_MIN=7'b1111110,SET_REMIND_SEC=7'b1111111,
-        SET_NOW_HOUR=7'b1110001,SET_NOW_MIN=7'b1110010,SET_NOW_SEC=7'b1110011,ERROR=7'b1000110,//REMIND=7'b1011001,
-        OFF_WAIT=7'b1010110;
-
-    parameter [7:0]SHOW_STAN=8'b10101010,SHOW_MENU=8'b11101011,SHOW_ONE=8'b10110001,SHOW_TWO=8'b10110010,SHOW_THREE=8'b10110011,SHOW_REMIND_CLEAN=8'b11001010,
-                SHOW_CLEAN=8'b11001100 , SHOW_SEARCH=8'b11111111,SHOW_WORKTIME=8'b11110000,SHOW_NOW=8'b11110001,SHOW_SWITCH=8'b11110010,SHOW_REMIND=8'b11110011,
-                SHOW_SET_H=8'b01010001 , SHOW_SET_M =8'b01010010,SHOW_SET_S=8'b01010011,SHOW_EXIT_STORM=8'b11100101,SHOW_ERROR=8'b11101110;
-
-    parameter period=100000000;
+    parameter period=100000000,re_cnt=48'h000000000000;
 
     reg [23:0]nowtime,worktime,remindtime,switchtime;
     reg [23:0]save_nowtime,save_remindtime,save_switchtime;
 
-    parameter re_cnt=48'h000000000000;
     wire [47:0]cnt_5s;
 
     // Generate clk_100Hz
@@ -55,7 +35,7 @@ module control_module(
             clk_100Hz <= 0;
             clk_100Hz_cnt <= 0;
         end else begin
-            if (clk_100Hz_cnt == 99999) begin  //
+            if (clk_100Hz_cnt == 99999) begin
                 clk_100Hz <= ~clk_100Hz;
                 clk_100Hz_cnt <= 0;
             end else begin
@@ -75,18 +55,15 @@ module control_module(
     reg recover_yet;
     reg [7:0]countdown_storm;
     reg [11:0]countdown_clean;
-    parameter countdown60=8'b01100000,countdown180=12'b000110000000;//12'b000000001000;
+    
 
-    //test
-    assign sX=(clkout)&(worktime>=remindtime);//clkout
-    assign sW=0;//nowtime
-    assign sA=state[6];
-    assign sD=0;
+    assign reminder=(clkout)&(worktime>=remindtime);//reminder for clean
+    assign opening=state[6];  //opening
 
     reg suspend; // work or not -> worktime++
-    assign light_on_=(state[6])&light_dip;
+    assign light_on=(state[6])&light_dip;
 
-    assign cnt_5s=(switchtime[23:20]*10+switchtime[19:16])*3600+(switchtime[15:12]*10+switchtime[11:8])*60+(switchtime[7:4]*10+switchtime[3:0]); // s
+    assign cnt_5s=(switchtime[23:20]*10+switchtime[19:16])*3600+(switchtime[15:12]*10+switchtime[11:8])*60+(switchtime[7:4]*10+switchtime[3:0]);
 
     always @(posedge clkout,negedge rst)begin
         if(!rst)begin
@@ -195,10 +172,10 @@ module control_module(
                 end
 
                 if(countdown_storm_yet==1'b1)begin
-                    countdown_storm<=countdown60;
+                    countdown_storm<=COUNTDOWN60;
                 end
                 if(countdown_clean_yet==1'b1)begin
-                    countdown_clean<=countdown180;
+                    countdown_clean<=COUNTDOWN180;
                 end
             end
         end
@@ -206,9 +183,10 @@ module control_module(
 
     //state machine
     always @(posedge clk,negedge rst) begin
-        if(!rst)begin// Back to initial state
+        // Back to initial state
+        if(!rst)begin
             clkout<=0;
-            nxt_state<=SHUTDOWN;//test
+            nxt_state<=SHUTDOWN;
             switchtime<=24'b000000000000000000000101;
             remindtime<=24'b000100000000000000000000;
             buttom_effect<=3'b000;
@@ -241,8 +219,7 @@ module control_module(
             save_switchtime_yet<=1'b0;
             suspend<=1'b0;
             sign<={nowtime,SHOW_STAN};
-        end
-        else begin
+        end else begin
 
             // Long push to turn pn/off
             if(sign_pos_X == 1'b1 && switch_P &&state[6]==1'b1) begin
@@ -307,18 +284,6 @@ module control_module(
                     cnt_D<=re_cnt; // Clear cnt_B
             end 
 
-            //remindtime<= worktime
-            // if(remindtime<=worktime && state!=REMIND)begin
-            //     if(state==STANDBY)begin
-                    
-            //     end
-            //     else if(state==CLEAN)begin
-                    
-            //     end
-            //     else nxt_state<=REMIND;
-            // end
-                
-            //clkout, 1ns -> 1s
             if(cnt_clk==(period>>1)-1)begin
                 clkout<=~clkout;
                 cnt_clk<=0;
@@ -394,7 +359,6 @@ module control_module(
                         nxt_state <= CLEAN;
                         countdown_clean_yet<=1'b1;
                     end 
-                    //nxt_state<=;
                 end
                 ONE:begin
                     suspend<=1'b1;
@@ -433,7 +397,6 @@ module control_module(
                     end
                     if(sign_pos_W && !switch_P)begin
                         nxt_state<=EXIT_STROM;
-                        //mm,serect
                         clkout<=1'b0;
                         countdown_storm_yet<=1'b1;
                     end
@@ -513,7 +476,7 @@ module control_module(
                     if(sign_pos_W && !switch_P)
                         nxt_state <= SEARCH;
                     else if(sign_pos_X && !switch_P)begin
-                        nxt_state <= SET_SWI_SEC;  //test
+                        nxt_state <= SET_SWI_SEC;
                     end
                 end
                 SEARCH_REMINDTIME:begin
@@ -724,7 +687,7 @@ module control_module(
                     suspend<=1'b0;
                     sign<={save_remindtime,SHOW_SET_M};
                     if(sign_pos_A && !switch_P)begin
-                        if(save_remindtime[15:8] == 8'b01011001) begin   //59+1=0
+                        if(save_remindtime[15:8] == 8'b01011001) begin
                             save_remindtime[15:8] <= 8'b00000000;
                         end
                         else if(save_remindtime[11:8]==4'b1001) begin
@@ -779,19 +742,6 @@ module control_module(
                         end
                     end
                 end
-                // REMIND:begin
-                //     suspend<=1'b0;
-                //     sign<={nowtime,SHOW_REMIND_CLEAN};
-                //     if(sign_pos_X && !switch_P)begin
-                //         nxt_state<=CLEAN;
-                //         countdown_clean_yet<=1'b1;
-                //     end
-                //     else if(sign_pos_D && !switch_P)begin
-                //         nxt_state<=STANDBY;
-                //         clean_worktime_yet<=1'b1;
-                //     end
-                //     else nxt_state<=REMIND;
-                // end
                 ERROR:begin
                     suspend<=1'b0;
                     cnt_error<=cnt_error+1;

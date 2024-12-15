@@ -19,13 +19,6 @@ module print_output(
 
     reg [24:0] clk_div; 
 
-    parameter [7:0]digit0=8'b11111100, digit1=8'b01100000, digit2=8'b11011010, digit3=8'b11110010, digit4=8'b01100110, digit5=8'b10110110, digit6=8'b10111110, digit7=8'b11100000;
-    parameter [7:0]digit8=8'b11111110, digit9=8'b11110110, digitA=8'b11101110, digitB=8'b00111110, digitC=8'b10011100, digitD=8'b01111010, digitE=8'b10011110, digitF=8'b10001110;
-    parameter [7:0]digit_=8'b00000010, digitU=8'b01111100, digitP=8'b11001110, digitL=8'b00011100, digit_NULL=8'b00000000;
-    
-    //parameter [3:0]sign7=4'b0111,sign6=4'b0110,sign5=4'b0101,sign4=4'b0100,sign3=4'b0011,sign2=4'b0010,sign1=4'b0001,sign0=4'b0000;
-
-    // Set temp varaiables
     reg [7:0]temp7,temp6,temp5,temp4,temp3,temp2,temp1,temp0;
     
     always @(posedge clk or negedge rst) begin
@@ -177,18 +170,18 @@ module print_output(
         endcase
     end
 
-    always @(*)begin // Use * here
+    always @(*)begin
         case (tub_sel)
-            8'b10000000: seg_74 = temp7; // ��ʾ??1������ܵ���??
-            8'b01000000: seg_74 = temp6; // ��ʾ??2������ܵ���??
-            8'b00100000: seg_74 = temp5; // ��ʾ??3������ܵ���??
-            8'b00010000: seg_74 = temp4; // ��ʾ??4������ܵ���??
-            8'b00001000: seg_30 = temp3; // ��ʾ??5������ܵ���??
-            8'b00000100: seg_30 = temp2; // ��ʾ??6������ܵ���??
-            8'b00000010: seg_30 = temp1; // ��ʾ??7������ܵ���??
-            8'b00000001: seg_30 = temp0; // ��ʾ??8������ܵ���??
+            8'b10000000: seg_74 = temp7;
+            8'b01000000: seg_74 = temp6;
+            8'b00100000: seg_74 = temp5;
+            8'b00010000: seg_74 = temp4;
+            8'b00001000: seg_30 = temp3;
+            8'b00000100: seg_30 = temp2;
+            8'b00000010: seg_30 = temp1;
+            8'b00000001: seg_30 = temp0;
             default: begin
-                seg_74 = 8'b00000000; // Ĭ�Ϲر�??�������
+                seg_74 = 8'b00000000;
                 seg_30 = 8'b00000000;
             end
         endcase
