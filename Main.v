@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+`include "PARAMETER.v" 
 module Main(
     input buttom_A,
     input buttom_S,

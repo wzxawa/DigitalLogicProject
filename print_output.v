@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-
+`include "PARAMETER.v" 
 module print_output(
     input en,
     input [3:0] sign7,

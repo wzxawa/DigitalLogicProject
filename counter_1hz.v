@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-
+`include "PARAMETER.v" 
 module counter_1hz(
     input clk,
     input reset,

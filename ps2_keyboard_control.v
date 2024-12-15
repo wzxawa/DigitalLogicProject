@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-
+`include "PARAMETER.v" 
 module ps2_keyboard_control(
 	clk, rst_n,
 	ps2_clk, ps2_data,
@@ -143,9 +143,9 @@ module ps2_keyboard_control(
                 end
             endcase
         end
-    end
        else if(ps2_byte_r == 8'h33)begin
             neg_h=1'b1;
        end 
+	end
 endmodule
                     

@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-
+`include "PARAMETER.v" 
 module control_module(
     input [6:0]state,
     input sign_pos_A,

@@ -1,3 +1,4 @@
+`include "PARAMETER.v" 
 module Edge_detection(
     input buttom_A,
     input buttom_S,
